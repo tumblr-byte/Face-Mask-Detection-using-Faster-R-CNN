@@ -6,14 +6,13 @@ import torch.utils.data
 from torchvision import transforms as T
 from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, random_split
 from tqdm import tqdm
-from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 import torchvision
 
 path = "path to your dataset"
 # Custom Dataset class
-class CustomDataset(torch.utils.data.Dataset):
+class CustomDataset(Dataset):
     def __init__(self, img_dir, annotation_dir, transforms=None):
         self.img_dir = img_dir
         self.annotation_dir = annotation_dir
@@ -110,18 +109,12 @@ train_loader = DataLoader(
     collate_fn=lambda x: tuple(zip(*x))
 )
 
-valid_loader = DataLoader(
-    valid_dataset,
-    batch_size=4,
-    shuffle=False,
-    num_workers=2,
-    collate_fn=lambda x: tuple(zip(*x))
-)
+
 
 
 
 # Model
-model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
+model = fasterrcnn_resnet50_fpn(pretrained=True)
 in_features = model.roi_heads.box_predictor.cls_score.in_features
 num_classes = 4 
 model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
@@ -154,3 +147,4 @@ for epoch in range(epochs):
         train_loss += losses.item()  
 
     print(f"[Epoch {epoch+1}] Train Loss: {train_loss / len(train_loader):.4f}")
+

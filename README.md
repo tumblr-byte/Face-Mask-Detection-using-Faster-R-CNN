@@ -30,7 +30,7 @@ Real-time face mask detection system using Faster R-CNN to classify proper mask 
 
 ### Class Distribution
 
-![Class Distribution](class_distribution.png)
+<img width="989" height="590" alt="Image" src="https://github.com/user-attachments/assets/1fdec436-1bbc-47d8-8051-2e3b45ae3810" />
 
 ```
 with_mask:              3,232 (79.37%)
@@ -51,7 +51,7 @@ mask_weared_incorrect:    123 ( 3.02%)
 | **Transfer Learning** | COCO pretrained weights reduce training time and improve generalization on small dataset. |
 | **Proven Architecture** | Extensively researched, well-documented, easier to debug than newer methods. |
 
-**Alternative Considered:** YOLOv5 (faster but ~3-5% lower mAP for this task)
+
 
 ---
 
@@ -93,7 +93,7 @@ ColorJitter(brightness=0.2,     # Handle different lighting
 
 ##  Training Curve
 
-![Training Curve](https://github.com/user-attachments/assets/b4844e84-2169-4144-bdaa-0c69368f0079)
+
 
 ### What Happened During Training:
 
@@ -168,28 +168,12 @@ cd face-mask-detection
 pip install -r requirements.txt
 ```
 
-### Requirements
-```
-torch>=2.0.0
-torchvision>=0.15.0
-pillow>=9.0.0
-matplotlib>=3.5.0
-tqdm>=4.65.0
-torchmetrics>=0.11.0
-numpy>=1.24.0
-```
-
----
 
 ##  Usage
 
-### 1. Analyze Dataset Distribution
-```bash
-python analyze_dataset.py
-```
-Outputs class distribution and saves visualization.
 
-### 2. Train Model
+
+### 1. Train Model
 ```bash
 python train.py
 ```
@@ -201,31 +185,9 @@ python train.py
 ```bash
 python test.py
 ```
-Update `IMAGE_PATH` in script. Applies NMS to reduce double detections.
 
-### 4. Visualize Predictions (Optional)
-```bash
-python visualize_predictions.py
-```
-Creates side-by-side ground truth vs predictions comparison.
 
----
 
-## Project Structure
-
-```
-face-mask-detection/
-├── train.py                    # Training script with augmentation
-├── test.py                     # Single image inference
-├── analyze_dataset.py          # Class distribution analysis
-├── visualize_predictions.py    # GT vs Pred comparison
-├── requirements.txt            # Dependencies
-├── best_model.pth             # Trained model weights
-├── README.md                  # This file
-└── dataset/
-    ├── images/                # JPG/PNG images
-    └── annotations/           # PASCAL VOC XML files
-```
 
 ---
 
@@ -245,7 +207,7 @@ face-mask-detection/
 
 ---
 
-## 🚧 Future Improvements
+## Future Improvements
 
 If given more time/resources:
 
@@ -267,22 +229,6 @@ If given more time/resources:
 - Add real-time video processing
 - Create web demo with Streamlit
 - Containerize with Docker
-
----
-
-##  Dataset Citation
-
-If you use this dataset, please credit:
-
-```
-@misc{make ml,
-  title={Mask Dataset},
-  url={https://makeml.app/datasets/mask},
-  journal={Make ML}
-}
-```
-
-**Dataset Link:** https://www.kaggle.com/datasets/andrewmvd/face-mask-detection
 
 ---
 

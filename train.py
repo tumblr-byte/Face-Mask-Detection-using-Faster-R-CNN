@@ -11,7 +11,6 @@ from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from tqdm import tqdm
 
 
-
 class CustomDataset(Dataset):
     def __init__(self, img_dir, ann_dir, transforms=None):
         self.img_dir = img_dir
@@ -45,7 +44,7 @@ class CustomDataset(Dataset):
                 label = 1
             elif name == "without_mask":
                 label = 2
-            else:
+            else:  # mask_weared_incorrect
                 label = 3
 
             b = obj.find("bndbox")
@@ -68,51 +67,129 @@ class CustomDataset(Dataset):
         return img, target
 
 
+# CONFIGURATION - CHANGE THESE
+DATASET_PATH = path  # Your dataset root folder
+BATCH_SIZE = 4  # Kept at 4 to avoid GPU OOM (out of memory)
+EPOCHS = 30
+LEARNING_RATE = 5e-4
+PATIENCE = 7  # Early stopping patience
+SEED = 42  # For reproducibility
 
-path = path  # dataset root
+# Set random seeds for reproducibility
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(SEED)
 
-transform = T.Compose([T.ToTensor()])
 
-dataset = CustomDataset(
-    img_dir=os.path.join(path, "images"),
-    ann_dir=os.path.join(path, "annotations"),
-    transforms=transform
+# DATA AUGMENTATION
+train_transform = T.Compose([
+    T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1),  # Vary lighting
+    T.RandomHorizontalFlip(0.5),  # Flip faces
+    T.ToTensor()
+])
+
+val_transform = T.Compose([
+    T.ToTensor()  # No augmentation for validation
+])
+
+
+full_dataset = CustomDataset(
+    img_dir=os.path.join(DATASET_PATH, "images"),
+    ann_dir=os.path.join(DATASET_PATH, "annotations"),
+    transforms=None
 )
 
-train_size = int(0.8 * len(dataset))
-val_size = len(dataset) - train_size
-train_dataset, val_dataset= random_split(dataset, [train_size, val_size])
+# 70% train, 15% val, 15% test split
+train_size = int(0.7 * len(full_dataset))
+val_size = int(0.15 * len(full_dataset))
+test_size = len(full_dataset) - train_size - val_size
 
-train_loader = DataLoader(train_dataset,batch_size=4, shuffle=True, num_workers=2, collate_fn=lambda x: tuple(zip(*x)))
+train_dataset, val_dataset, test_dataset = random_split(
+    full_dataset,
+    [train_size, val_size, test_size],
+    generator=torch.Generator().manual_seed(SEED)
+)
 
-val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False, num_workers=2, collate_fn=lambda x: tuple(zip(*x)))
+# Apply transforms
+train_dataset.dataset.transforms = train_transform
+val_dataset.dataset.transforms = val_transform
+test_dataset.dataset.transforms = val_transform
+
+print(f"Train: {len(train_dataset)} | Val: {len(val_dataset)} | Test: {len(test_dataset)}")
+
+# DataLoaders
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=BATCH_SIZE,
+    shuffle=True,
+    num_workers=2,
+    collate_fn=lambda x: tuple(zip(*x))
+)
+
+val_loader = DataLoader(
+    val_dataset,
+    batch_size=BATCH_SIZE,
+    shuffle=False,
+    num_workers=2,
+    collate_fn=lambda x: tuple(zip(*x))
+)
+
+test_loader = DataLoader(
+    test_dataset,
+    batch_size=BATCH_SIZE,
+    shuffle=False,
+    num_workers=2,
+    collate_fn=lambda x: tuple(zip(*x))
+)
 
 
-
+# MODEL SETUP
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
+# Load pretrained Faster R-CNN
 model = fasterrcnn_resnet50_fpn(pretrained=True)
+
+# Replace classifier head for 4 classes (background + 3 mask classes)
 in_features = model.roi_heads.box_predictor.cls_score.in_features
 model.roi_heads.box_predictor = FastRCNNPredictor(in_features, 4)
+
 model.to(device)
 
-optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad],lr=5e-4)
+# Optimizer and scheduler
+optimizer = torch.optim.Adam(
+    [p for p in model.parameters() if p.requires_grad],
+    lr=LEARNING_RATE
+)
 
-def train_model(model, optimizer, train_loader, val_loader, device, epochs=30, patience=7, save_path="best.pth"):
+
+# Reduce learning rate when validation loss plateaus
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer, mode='min', factor=0.5, patience=3
+)
+
+# TRAINING FUNCTION
+def train_model(model, optimizer, scheduler, train_loader, val_loader, device,
+                epochs=30, patience=7, save_path="best_model.pth"):
     best_loss = float("inf")
     counter = 0
+    history = {'train_loss': [], 'val_loss': []}
 
     for epoch in range(epochs):
+        # ========== TRAINING ==========
         model.train()
         train_loss = 0
 
-        for images, targets in tqdm(train_loader, desc=f"Train {epoch+1}"):
+        for images, targets in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs} [Train]"):
             images = [img.to(device) for img in images]
             targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
+            # Forward pass
             loss_dict = model(images, targets)
             loss = sum(l for l in loss_dict.values())
 
+            # Backward pass
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -120,16 +197,19 @@ def train_model(model, optimizer, train_loader, val_loader, device, epochs=30, p
             train_loss += loss.item()
 
         train_loss /= len(train_loader)
+        history['train_loss'].append(train_loss)
 
+        # ========== VALIDATION ==========
         model.eval()
         val_loss = 0
 
         with torch.no_grad():
-            for images, targets in tqdm(val_loader, desc="Val"):
+            for images, targets in tqdm(val_loader, desc=f"Epoch {epoch+1}/{epochs} [Val]  "):
                 images = [img.to(device) for img in images]
                 targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
-                model.train()  
+                # Need to set model to train mode to get loss
+                model.train()
                 loss_dict = model(images, targets)
                 loss = sum(l for l in loss_dict.values())
                 model.eval()
@@ -137,40 +217,58 @@ def train_model(model, optimizer, train_loader, val_loader, device, epochs=30, p
                 val_loss += loss.item()
 
         val_loss /= len(val_loader)
+        history['val_loss'].append(val_loss)
 
-        print(f"Epoch {epoch+1}/{epochs} Train Loss: {train_loss:.4f} Val Loss: {val_loss:.4f}")
+        # Learning rate scheduling
+        scheduler.step(val_loss)
+        current_lr = optimizer.param_groups[0]['lr']
 
+
+        print(f"Epoch {epoch+1}/{epochs} , Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | LR: {current_lr:.6f}")
+
+        # EARLY STOPPING
         if val_loss < best_loss:
             best_loss = val_loss
             counter = 0
             torch.save(model.state_dict(), save_path)
-            print("Model saved")
+            print(f"Model saved (best val loss: {best_loss:.4f})")
         else:
             counter += 1
-            print("No improvement")
+            print(f"No improvement")
 
         if counter >= patience:
-            print("Early stopping")
+            print(f"Early stopping triggered")
             break
 
+    return history
 
 
-train_model(model,optimizer, train_loader, val_loader, device, epochs=30, patience=7, save_path="best.pth")
 
+
+history = train_model(
+    model, optimizer, scheduler, train_loader, val_loader, device,
+    epochs=EPOCHS, patience=PATIENCE, save_path="best_model.pth"
+)
+
+
+# EVALUATION FUNCTION
 def evaluate_map(model, loader, device):
     model.eval()
     metric = MeanAveragePrecision(iou_thresholds=[0.5])
 
     with torch.no_grad():
-        for images, targets in tqdm(loader, desc="mAP"):
+        for images, targets in tqdm(loader, desc="Computing mAP"):
             images = [img.to(device) for img in images]
             targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
             outputs = model(images)
             metric.update(outputs, targets)
 
-    return metric.compute()["map_50"].item()
+    results = metric.compute()
+    print(f"mAP@0.5 (Overall): {results['map_50'].item():.4f}")
 
+    return results['map_50'].item()
+    
 
-model.load_state_dict(torch.load("best.pth"))
-map50 = evaluate_map(model, val_loader, device)
-print(f"mAP@0.5: {map50:.4f}")
+model.load_state_dict(torch.load("best_model.pth"))
+test_map50 = evaluate_map(model, test_loader, device)
+

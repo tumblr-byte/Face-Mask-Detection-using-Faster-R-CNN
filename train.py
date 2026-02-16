@@ -94,22 +94,14 @@ val_transform = T.Compose([
 ])
 
 
-full_dataset = CustomDataset(
-    img_dir=os.path.join(DATASET_PATH, "images"),
-    ann_dir=os.path.join(DATASET_PATH, "annotations"),
-    transforms=None
-)
+full_dataset = CustomDataset(img_dir=os.path.join(DATASET_PATH, "images"),  ann_dir=os.path.join(DATASET_PATH, "annotations"), transforms=None)
 
 # 70% train, 15% val, 15% test split
 train_size = int(0.7 * len(full_dataset))
 val_size = int(0.15 * len(full_dataset))
 test_size = len(full_dataset) - train_size - val_size
 
-train_dataset, val_dataset, test_dataset = random_split(
-    full_dataset,
-    [train_size, val_size, test_size],
-    generator=torch.Generator().manual_seed(SEED)
-)
+train_dataset, val_dataset, test_dataset = random_split(full_dataset, [train_size, val_size, test_size], generator=torch.Generator().manual_seed(SEED))
 
 # Apply transforms
 train_dataset.dataset.transforms = train_transform
@@ -119,34 +111,13 @@ test_dataset.dataset.transforms = val_transform
 print(f"Train: {len(train_dataset)} | Val: {len(val_dataset)} | Test: {len(test_dataset)}")
 
 # DataLoaders
-train_loader = DataLoader(
-    train_dataset,
-    batch_size=BATCH_SIZE,
-    shuffle=True,
-    num_workers=2,
-    collate_fn=lambda x: tuple(zip(*x))
-)
-
-val_loader = DataLoader(
-    val_dataset,
-    batch_size=BATCH_SIZE,
-    shuffle=False,
-    num_workers=2,
-    collate_fn=lambda x: tuple(zip(*x))
-)
-
-test_loader = DataLoader(
-    test_dataset,
-    batch_size=BATCH_SIZE,
-    shuffle=False,
-    num_workers=2,
-    collate_fn=lambda x: tuple(zip(*x))
-)
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2, collate_fn=lambda x: tuple(zip(*x)))
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2, collate_fn=lambda x: tuple(zip(*x)))
+test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2, collate_fn=lambda x: tuple(zip(*x)))
 
 
 # MODEL SETUP
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 # Load pretrained Faster R-CNN
 model = fasterrcnn_resnet50_fpn(pretrained=True)
@@ -158,26 +129,20 @@ model.roi_heads.box_predictor = FastRCNNPredictor(in_features, 4)
 model.to(device)
 
 # Optimizer and scheduler
-optimizer = torch.optim.Adam(
-    [p for p in model.parameters() if p.requires_grad],
-    lr=LEARNING_RATE
-)
+optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=LEARNING_RATE)
 
 
 # Reduce learning rate when validation loss plateaus
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    optimizer, mode='min', factor=0.5, patience=3
-)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
 
 # TRAINING FUNCTION
-def train_model(model, optimizer, scheduler, train_loader, val_loader, device,
-                epochs=30, patience=7, save_path="best_model.pth"):
+def train_model(model, optimizer, scheduler, train_loader, val_loader, device, epochs=30, patience=7, save_path="best_model.pth"):
     best_loss = float("inf")
     counter = 0
     history = {'train_loss': [], 'val_loss': []}
 
     for epoch in range(epochs):
-        # ========== TRAINING ==========
+        # TRAINING 
         model.train()
         train_loss = 0
 
@@ -199,7 +164,7 @@ def train_model(model, optimizer, scheduler, train_loader, val_loader, device,
         train_loss /= len(train_loader)
         history['train_loss'].append(train_loss)
 
-        # ========== VALIDATION ==========
+        # VALIDATION
         model.eval()
         val_loss = 0
 
@@ -243,13 +208,7 @@ def train_model(model, optimizer, scheduler, train_loader, val_loader, device,
     return history
 
 
-
-
-history = train_model(
-    model, optimizer, scheduler, train_loader, val_loader, device,
-    epochs=EPOCHS, patience=PATIENCE, save_path="best_model.pth"
-)
-
+history = train_model(model, optimizer, scheduler, train_loader, val_loader, device, epochs=EPOCHS, patience=PATIENCE, save_path="best_model.pth")
 
 # EVALUATION FUNCTION
 def evaluate_map(model, loader, device):
@@ -271,4 +230,5 @@ def evaluate_map(model, loader, device):
 
 model.load_state_dict(torch.load("best_model.pth"))
 test_map50 = evaluate_map(model, test_loader, device)
+
 

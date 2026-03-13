@@ -163,7 +163,7 @@ Val Loss:   0.3171  ← 3.3x higher
 ##  Installation
 
 ```bash
-git clone https://github.com/tumblr-byte/face-mask-detection.git
+git clone https://github.com/Pooja-Vachhad/face-mask-detection.git
 cd face-mask-detection
 pip install -r requirements.txt
 ```
